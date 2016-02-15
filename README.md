@@ -1,2 +1,2 @@
 # occ_mdl_bica_multi-obs
-code for running occupancy models
+contains JAGS and R code for running occupancy models in the report
