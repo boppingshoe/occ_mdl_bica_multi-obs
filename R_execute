@@ -1,0 +1,45 @@
+# format data (general mdl, 3-observer)----
+mm_data<- read.csv("E:/1_nps_bica/bica_report/mm_data.csv")[,-1]
+sub_spp<- filter(mm_data, spp=='Hesperostipa comata')
+y<- filter(sub_spp, stw==1|tw==1)[,c(8:10,14,15,31)]
+y$frame<- as.numeric(as.factor(y$frame))
+y$obsr_n<- rep(0, nrow(y)); y$obsr_y<- rep(1, nrow(y))
+zst<- apply(y[,1:3], 1, max)
+y$det1[y$stw==0]<- NA
+
+# set up JAGS
+fr_n<- length(unique(y$frame))
+occ_data <- list(y= y[,c(2,3,1)], r= nrow(y), obsr2= y[,c(7,8,7)], obsr3= y[,c(7,7,8)], fr= fr_n, frame=y$frame)
+str(occ_data)   
+
+inits <- function(){
+  list (z= zst, alpha.p=runif(1,-3,3), beta.obs2=runif(1,-3,3), beta.obs3=runif(1,-3,3), psi=runif(fr_n))} 
+
+params <- c("psi", "alpha.p", "beta.obs2", "beta.obs3", "occ.fs", "fit_obs", "fit_rep")
+
+nc <- 3   ;   ni <- 6000   ;   nb <- 1000   ;   nt <- 1
+
+require(jagsUI)
+occ_out<- jags(occ_data, inits, params, "E:/1_nps_bica/occupancy/occ_mdl_3obs.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni)
+print(occ_out, 3)
+
+windows()
+plot(occ_out)
+
+sims<- occ_out$sims.list
+psi=sims$psi; alp_p=sims$alpha.p; beta_obs2=sims$beta.obs2; beta_obs3=sims$beta.obs3; occ_fs=sims$occ.fs; fit_obs=sims$fit_obs; fit_rep=sims$fit_rep
+
+p1<- plogis(alp_p)
+p2<- plogis(alp_p+ beta_obs2)
+p3<- plogis(alp_p+ beta_obs3)
+q.5<- c(quantile(p1,.5), quantile(p2,.5), quantile(p3,.5))
+q.05<- c(quantile(p1,.05), quantile(p2,.05), quantile(p3,.05))
+q.95<- c(quantile(p1,.95), quantile(p2,.95), quantile(p3,.95))
+results<- cbind(round(q.5,3), round(q.05,3), round(q.95,3))
+dimnames(results)<- list(c('p1','p2','p3'), c('median', '5%', '95%'))
+results
+
+# evaluate fit
+windows()
+plot(fit_obs, fit_rep, pch=20, cex=.6, xlab="discrepancy observed data", ylab="discrepancy predicted data", xlim=c(0,2.5), ylim=c(0,2.5), abline(0,1,lwd=2,col="red"))
+mean(fit_rep > fit_obs)
