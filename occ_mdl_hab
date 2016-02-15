@@ -1,0 +1,35 @@
+model{
+    # priors
+    for(k in 1:fr){
+      psi[k]~ dunif(0,1)
+    }
+    alpha.p~ dunif(-10,10)
+    beta.p~ dunif(-10,10)
+    beta.hab2~ dunif(-10,10)
+    beta.hab3~ dunif(-10,10)
+
+    #ecological process
+    for (i in 1:r){
+      z[i]~ dbern(psi[frame[i]])
+      
+      #obervation process
+      for (j in 1:T){
+        y[i,j]~ dbern(z[i]*p[i,j])
+        logit(p[i,j])<- alpha.p + beta.p*obsr2[i,j] + beta.hab2*hab2[i] + beta.hab3*hab3[i]
+        ey[i,j]<- z[i]*p[i,j] #expected y value
+        yrep[i,j]~ dbern(z[i]*p[i,j]) #posterior predictive
+      }#j
+    }#i
+    occ.fs<- sum(z[])
+    #freeman-tukey
+    for (k in 1:2){
+      sum_y[k]<- sum(y[,k]) #aggregate by column
+      sum_ey[k]<- sum(ey[,k])
+      sum_yrep[k]<- sum(yrep[,k])
+      e_obs[k]<- pow( (pow(sum_y[k],0.5)-pow(sum_ey[k],0.5)), 2)
+      e_rep[k] <- pow( (pow(sum_yrep[k],0.5)-pow(sum_ey[k],0.5)), 2)
+    }
+    
+    fit_obs <- sum(e_obs[])
+    fit_rep <- sum(e_rep[])
+}
