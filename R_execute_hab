@@ -1,0 +1,84 @@
+# format data (habitat covar mdl)----
+mm_data<- read.csv("E:/1_nps_bica/bica_report/mm_data.csv")[,-1]
+sub_spp<- filter(mm_data, spp=='Gutierrezia sarothrae')
+y<- filter(sub_spp, st==1|stw==1)[,c(8:9,16:25,31)]
+#y<- filter(sub_spp, br==1)[,c(8:9,16:25,31)]
+y$frame<- as.numeric(as.factor(y$frame))
+y$obsr1<- rep(0, nrow(y)); y$obsr2<- rep(1, nrow(y))
+y$hab2<- rep(NA, nrow(y)); y$hab3<- rep(NA, nrow(y))
+
+for(j in 1:nrow(y)){ 
+  ifelse(y$v020[j]==1, y[j,c(16,17)]<-c(0,0),
+  ifelse(y$v050[j]==1, y[j,c(16,17)]<-c(1,0),
+  ifelse(y$v060[j]==1, y[j,c(16,17)]<-c(1,0),
+  ifelse(y$v070[j]==1, y[j,c(16,17)]<-c(0,1),
+  ifelse(y$v080[j]==1, y[j,c(16,17)]<-c(0,1),
+  ifelse(y$v090[j]==1, y[j,c(16,17)]<-c(0,1),
+  ifelse(y$v100[j]==1, y[j,c(16,17)]<-c(1,0),
+  ifelse(y$v110[j]==1, y[j,c(16,17)]<-c(1,0),
+  ifelse(y$v120[j]==1, y[j,c(16,17)]<-c(0,0),
+  ifelse(y$v150[j]==1, y[j,c(16,17)]<-c(0,0),
+  NA))))))))))
+} # assign habitat type
+
+# set up JAGS
+fr_n<- length(unique(y$frame))
+occhab_data <- list(y= y[,1:2], r= nrow(y), T= 2, obsr2= y[,14:15], fr= fr_n, frame=y$frame, hab2= y$hab2, hab3= y$hab3)
+str(occhab_data)   
+
+zst<- apply(y[,1:2], 1, max)
+inits <- function(){
+  list (z= zst, alpha.p=runif(1,-3,3), beta.p=runif(1,-3,3), beta.hab2=runif(1,-3,3), beta.hab3=runif(1,-3,3), psi=runif(fr_n))
+} 
+
+params <- c("psi", "alpha.p", "beta.p", "beta.hab2", "beta.hab3", "occ.fs", "fit_obs", "fit_rep")
+
+nc <- 3   ;   ni <- 6000   ;   nb <- 1000   ;   nt <- 1
+
+require(jagsUI)
+occhab_out<- jags(occhab_data, inits, params, "E:/1_nps_bica/occupancy/occ_mdl_hab.txt", n.thin=nt, n.chains=nc, n.burnin=nb, n.iter=ni)
+print(occhab_out, 3)
+
+windows()
+plot(occhab_out)
+
+#write.table(hab_sims, file="E:/1_nps_bica/occupancy/occ_hab_sims.txt")
+hab_sims<- occhab_out$sims.list
+psi=hab_sims$psi; alp_p=hab_sims$alpha.p; beta_p=hab_sims$beta.p; beta_hab2=hab_sims$beta.hab2; beta_hab3=hab_sims$beta.hab3; occ_fs=hab_sims$occ.fs; fit_obs=hab_sims$fit_obs; fit_rep=hab_sims$fit_rep
+
+#habitat 1
+p1h1<- plogis(alp_p)
+p2h1<- plogis(alp_p+ beta_p)
+
+#habitat 2
+p1h2<- plogis(alp_p+ beta_hab2)
+p2h2<- plogis(alp_p+ beta_p+ beta_hab2)
+mean(p1h2-p1h1); sd(p1h2-p1h1)
+quantile(p1h2-p1h1,c(.5,.05,.95)) # prob
+sum(abs(p1h2-p1h1)>.1)/length(p1h1)
+mean(p2h2-p2h1); sd(p2h2-p2h1)
+quantile(p2h2-p2h1,c(.5,.05,.95))
+sum(abs(p2h2-p2h1)>.1)/length(p2h1)
+
+#habitat 3
+p1h3<- plogis(alp_p+ beta_hab3)
+p2h3<- plogis(alp_p+ beta_p+ beta_hab3)
+mean(p1h3-p1h1); sd(p1h3-p1h1)
+quantile(p1h3-p1h1,c(.5,.05,.95)) # prob
+sum(abs(p1h3-p1h1)>.1)/length(p1h1)
+mean(p2h3-p2h1); sd(p2h3-p2h1)
+quantile(p2h3-p2h1,c(.5,.05,.95))
+sum(abs(p2h3-p2h1)>.1)/length(p2h1)
+
+mean<- c(mean(p1h1), mean(p1h2), mean(p1h3), mean(p2h1), mean(p2h2), mean(p2h3))
+q.5<- c(quantile(p1h1,.5), quantile(p1h2,.5), quantile(p1h3,.5), quantile(p2h1,.5), quantile(p2h2,.5), quantile(p2h3,.5))
+q.05<- c(quantile(p1h1,.05), quantile(p1h2,.05), quantile(p1h3,.05), quantile(p2h1,.05), quantile(p2h2,.05), quantile(p2h3,.05))
+q.95<- c(quantile(p1h1,.95), quantile(p1h2,.95), quantile(p1h3,.95), quantile(p2h1,.95), quantile(p2h2,.95), quantile(p2h3,.95))
+compare<- cbind(round(mean,3), round(q.5,3), round(q.05,3), round(q.95,3))
+dimnames(compare)<- list(c('p1_hab1','p1_hab2','p1_hab3','p2_hab1','p2_hab2','p2_hab3'), c('mean', 'median', '5%', '95%'))
+compare
+
+# evaluate fit
+windows()
+plot(fit_obs, fit_rep, pch=20, cex=.6, xlab="discrepancy observed data", ylab="discrepancy predicted data", xlim=c(0,1), ylim=c(0,1), abline(0,1,lwd=2,col="red"))
+mean(fit_rep > fit_obs)
